@@ -1,5 +1,5 @@
 from scraper.fetch_bills import fetch_bills
-from ai.generate_draft import generate_draft
+from backend.ai.generate_draft import generate_draft()
 from database.db import save_bill, init_db
 
 

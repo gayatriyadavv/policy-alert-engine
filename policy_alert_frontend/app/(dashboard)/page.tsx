@@ -1,401 +1,298 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+
+
+
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, BarChart, Bar
 } from "recharts"
-
-import {
-  FileText,
-  Calendar,
-  MessageSquare,
-  TrendingUp,
-  ArrowRight,
-  RefreshCw
-} from "lucide-react"
-
+import { FileText, Calendar, MessageSquare, TrendingUp, ArrowRight, RefreshCw, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface Bill {
+  id: string
+  title: string
+  impact_score: number
+  priority: string
+  category: string
+}
+
+interface Alert {
+  bill_id: string
+  title: string
+  alert_level: string
+  impact_score: number
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function apiFetch<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${path}`)
+  return res.json() as Promise<T>
+}
+
+function generateReportBlob(bills: Bill[]): Blob {
+  const lines = bills.map((b, i) => `${i + 1}. ${b.title} (Impact ${b.impact_score})`)
+  const content = [
+    "Policy Alert Engine Report",
+    "==========================",
+    "",
+    `Total Bills: ${bills.length}`,
+    "",
+    "Bills:",
+    ...lines,
+    "",
+    `Generated: ${new Date().toLocaleString()}`,
+  ].join("\n")
+  return new Blob([content], { type: "text/plain" })
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function StatCard({
+  title, value, icon: Icon,
+}: { title: string; value: number; icon: React.ElementType }) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function BillRow({ bill, href }: { bill: Bill; href: string }) {
+  return (
+    <div className="flex items-center justify-between border p-3 rounded-lg hover:bg-muted transition-colors">
+      <div>
+        <p className="font-medium">{bill.title}</p>
+        <p className="text-xs text-muted-foreground">
+          Impact {bill.impact_score} • {bill.priority}
+        </p>
+      </div>
+      <Link href={href} aria-label={`View analysis for ${bill.title}`}>
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function DashboardPage() {
-
-  const [bills, setBills] = useState<any[]>([])
-  const [alerts, setAlerts] = useState<any[]>([])
+  const [bills, setBills] = useState<Bill[]>([])
+  const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
 
-  useEffect(() => {
-
-    async function loadData() {
-
-      try {
-
-        const billsRes = await fetch("http://127.0.0.1:8000/bills")
-        const billsData = await billsRes.json()
-
-        if (billsData?.bills) {
-          setBills(billsData.bills)
-        }
-
-        const alertsRes = await fetch("http://127.0.0.1:8000/alerts")
-        const alertsData = await alertsRes.json()
-
-        if (alertsData?.alerts) {
-          setAlerts(alertsData.alerts)
-        }
-
-      } catch (err) {
-
-        console.error("Dashboard API error:", err)
-
-      }
-
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [billsData, alertsData] = await Promise.all([
+        apiFetch<{ bills: Bill[] }>("/bills"),
+        apiFetch<{ alerts: Alert[] }>("/alerts"),
+      ])
+      setBills(billsData.bills ?? [])
+      setAlerts(alertsData.alerts ?? [])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error"
+      console.error("Dashboard load failed:", msg)
+      setError(`Could not reach the API. Check that the server is running. (${msg})`)
+    } finally {
       setLoading(false)
-
     }
-
-    loadData()
-
   }, [])
 
-  const totalBills = bills.length
-  const commentDrafts = totalBills
-  const alertCount = alerts.length
-  const recentBills = bills.slice(0,5)
-
-  const topPriorityBills = [...bills]
-    .sort((a:any,b:any)=>b.impact_score-a.impact_score)
-    .slice(0,5)
+  useEffect(() => { loadData() }, [loadData])
 
   const handleScan = async () => {
-
-    await fetch("http://127.0.0.1:8000/scan",{
-      method:"POST"
-    })
-
-    window.location.reload()
-
+    setScanning(true)
+    try {
+      await apiFetch<unknown>("/scan")   // POST handled via apiFetch below
+      await fetch(`${API_BASE}/scan`, { method: "POST" })
+      await loadData()
+    } catch (err) {
+      console.error("Scan failed:", err)
+    } finally {
+      setScanning(false)
+    }
   }
 
   const handleGenerateReport = () => {
-
-    if (!bills.length) {
-      alert("No bills available for report")
-      return
-    }
-
-    const report = `
-Policy Alert Engine Report
-==========================
-
-Total Bills: ${bills.length}
-
-Bills:
-${bills.map((b:any,i:number)=>`${i+1}. ${b.title} (Impact ${b.impact_score})`).join("\n")}
-
-Generated: ${new Date().toLocaleString()}
-`
-
-    const blob = new Blob([report], { type: "text/plain" })
-    const url = URL.createObjectURL(blob)
-
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "policy-report.txt"
+    if (!bills.length) return alert("No bills available for report")
+    const url = URL.createObjectURL(generateReportBlob(bills))
+    const a = Object.assign(document.createElement("a"), { href: url, download: "policy-report.txt" })
     a.click()
-
     URL.revokeObjectURL(url)
   }
 
-  const activityData = bills.slice(0,6).map((b,i)=>({
-    month:`Bill ${i+1}`,
-    bills:i+2,
-    comments:i+1
+  // Derived data
+  const topPriorityBills = [...bills].sort((a, b) => b.impact_score - a.impact_score).slice(0, 5)
+  const recentBills = bills.slice(0, 5)
+
+  const activityData = bills.slice(0, 6).map((_, i) => ({
+    month: `Bill ${i + 1}`,
+    bills: i + 2,
+    comments: i + 1,
   }))
 
-  const categories:any = {}
-
-  bills.forEach((b:any)=>{
-    categories[b.category] = (categories[b.category] || 0) + 1
-  })
-
-  const categoryData = Object.keys(categories).map((c)=>({
-    category:c,
-    count:categories[c]
-  }))
+  const categoryData = Object.entries(
+    bills.reduce<Record<string, number>>((acc, b) => {
+      acc[b.category] = (acc[b.category] ?? 0) + 1
+      return acc
+    }, {})
+  ).map(([category, count]) => ({ category, count }))
 
   if (loading) {
-    return <div className="p-10 text-lg">Loading dashboard...</div>
+    return (
+      <div className="flex h-64 items-center justify-center text-muted-foreground">
+        Loading dashboard…
+      </div>
+    )
   }
 
   return (
-
     <div className="space-y-6">
-
-      {/* HEADER */}
-
-      <div className="flex justify-between items-center">
-
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Policy monitoring overview</p>
         </div>
-
         <div className="flex gap-2">
-
-          <Button onClick={handleScan}>
-            <RefreshCw className="mr-2 h-4 w-4"/>
-            Scan Bills
+          <Button onClick={handleScan} disabled={scanning}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${scanning ? "animate-spin" : ""}`} />
+            {scanning ? "Scanning…" : "Scan Bills"}
           </Button>
-
-          <Button onClick={handleGenerateReport}>
-            <TrendingUp className="mr-2 h-4 w-4"/>
+          <Button onClick={handleGenerateReport} disabled={!bills.length}>
+            <TrendingUp className="mr-2 h-4 w-4" />
             Generate Report
           </Button>
-
         </div>
-
       </div>
 
-      {/* STATS */}
+      {/* Error banner */}
+      {error && <ErrorBanner message={error} />}
 
+      {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-
-        <Card>
-          <CardHeader className="flex justify-between pb-2">
-            <CardTitle className="text-sm">Bills Detected</CardTitle>
-            <FileText className="h-4 w-4"/>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalBills}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex justify-between pb-2">
-            <CardTitle className="text-sm">Comment Drafts</CardTitle>
-            <MessageSquare className="h-4 w-4"/>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{commentDrafts}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex justify-between pb-2">
-            <CardTitle className="text-sm">Alerts</CardTitle>
-            <Calendar className="h-4 w-4"/>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{alertCount}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex justify-between pb-2">
-            <CardTitle className="text-sm">Recent Bills</CardTitle>
-            <FileText className="h-4 w-4"/>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{recentBills.length}</div>
-          </CardContent>
-        </Card>
-
+        <StatCard title="Bills Detected"  value={bills.length}        icon={FileText}      />
+        <StatCard title="Comment Drafts"  value={bills.length}        icon={MessageSquare} />
+        <StatCard title="Alerts"          value={alerts.length}       icon={Calendar}      />
+        <StatCard title="Recent Bills"    value={recentBills.length}  icon={FileText}      />
       </div>
 
-      {/* TOP PRIORITY BILLS */}
-
+      {/* Top Priority Bills */}
       <Card>
-
         <CardHeader>
           <CardTitle>Top Priority Bills</CardTitle>
-          <CardDescription>
-            Highest impact animal-policy legislation
-          </CardDescription>
+          <CardDescription>Highest impact animal-policy legislation</CardDescription>
         </CardHeader>
-
-        <CardContent>
-
-          {topPriorityBills.map((bill:any)=>(
-            <div
-              key={bill.id}
-              className="flex justify-between border p-3 rounded-lg mb-2"
-            >
-
-              <div>
-                <p className="font-medium">{bill.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  Impact {bill.impact_score} • {bill.priority}
-                </p>
-              </div>
-
-              <Link href={`/analysis?bill=${bill.id}`}>
-                <ArrowRight className="h-4 w-4"/>
-              </Link>
-
-            </div>
-          ))}
-
+        <CardContent className="space-y-2">
+          {topPriorityBills.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No bills found.</p>
+          ) : (
+            topPriorityBills.map((bill) => (
+              <BillRow key={bill.id} bill={bill} href={`/analysis?bill=${bill.id}`} />
+            ))
+          )}
         </CardContent>
-
       </Card>
 
-      {/* CHARTS */}
-
+      {/* Charts */}
       <div className="grid gap-4 lg:grid-cols-2">
-
         <Card>
-
           <CardHeader>
             <CardTitle>Policy Activity</CardTitle>
-            <CardDescription>Bills and comments</CardDescription>
+            <CardDescription>Bills and comments over time</CardDescription>
           </CardHeader>
-
           <CardContent className="h-[300px]">
-
             <ResponsiveContainer width="100%" height="100%">
-
               <AreaChart data={activityData}>
-
-                <CartesianGrid strokeDasharray="3 3"/>
-
-                <XAxis dataKey="month"/>
-
-                <YAxis/>
-
-                <Tooltip/>
-
-                <Area
-                  type="monotone"
-                  dataKey="bills"
-                  stroke="#16a34a"
-                  fill="#16a34a"
-                  fillOpacity={0.5}
-                />
-
-                <Area
-                  type="monotone"
-                  dataKey="comments"
-                  stroke="#2563eb"
-                  fill="#2563eb"
-                  fillOpacity={0.4}
-                />
-
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip />
+                <Area type="monotone" dataKey="bills"    stroke="#16a34a" fill="#16a34a" fillOpacity={0.5} />
+                <Area type="monotone" dataKey="comments" stroke="#2563eb" fill="#2563eb" fillOpacity={0.4} />
               </AreaChart>
-
             </ResponsiveContainer>
-
           </CardContent>
-
         </Card>
 
         <Card>
-
           <CardHeader>
             <CardTitle>Bills by Category</CardTitle>
           </CardHeader>
-
           <CardContent className="h-[300px]">
-
             <ResponsiveContainer width="100%" height="100%">
-
               <BarChart data={categoryData}>
-
-                <CartesianGrid strokeDasharray="3 3"/>
-
-                <XAxis dataKey="category"/>
-
-                <YAxis/>
-
-                <Tooltip/>
-
-                <Bar dataKey="count" fill="#16a34a"/>
-
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="category" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="count" fill="#16a34a" />
               </BarChart>
-
             </ResponsiveContainer>
-
           </CardContent>
-
         </Card>
-
       </div>
 
-      {/* RECENT BILLS */}
-
+      {/* Recent Bills */}
       <Card>
-
-        <CardHeader className="flex justify-between">
-
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Recent Bills</CardTitle>
-
           <Button variant="ghost" size="sm" asChild>
-
             <Link href="/bills">
-              View All
-              <ArrowRight className="ml-2 h-4 w-4"/>
+              View All <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
-
           </Button>
-
         </CardHeader>
-
-        <CardContent>
-
-          <div className="space-y-3">
-
-            {recentBills.map((bill:any)=>(
-              <div
-                key={bill.id}
-                className="flex justify-between border p-3 rounded-lg hover:bg-muted"
-              >
-
-                <div>
-                  <span>{bill.title}</span>
-                  <p className="text-xs text-muted-foreground">
-                    Impact {bill.impact_score}
-                  </p>
-                </div>
-
-                <Link href={`/analysis?bill=${bill.id}`}>
-                  <ArrowRight className="h-4 w-4"/>
-                </Link>
-
-              </div>
-            ))}
-
-          </div>
-
+        <CardContent className="space-y-2">
+          {recentBills.map((bill) => (
+            <BillRow key={bill.id} bill={bill} href={`/analysis?bill=${bill.id}`} />
+          ))}
         </CardContent>
-
       </Card>
 
-      {/* RECENT ALERTS */}
-
+      {/* Recent Alerts */}
       <Card>
-
         <CardHeader>
           <CardTitle>Recent Alerts</CardTitle>
         </CardHeader>
-
-        <CardContent>
-
+        <CardContent className="space-y-2">
           {alerts.length === 0 ? (
-            <p className="text-muted-foreground">No alerts detected</p>
+            <p className="text-sm text-muted-foreground">No alerts detected</p>
           ) : (
-            alerts.slice(0,5).map((alert:any)=>(
-              <div
-                key={alert.bill_id}
-                className="border rounded-lg p-3 mb-2"
-              >
+            alerts.slice(0, 5).map((alert) => (
+              <div key={alert.bill_id} className="rounded-lg border p-3">
                 <p className="font-medium">{alert.title}</p>
                 <p className="text-sm text-red-500">
                   {alert.alert_level} • Impact {alert.impact_score}
@@ -403,11 +300,8 @@ Generated: ${new Date().toLocaleString()}
               </div>
             ))
           )}
-
         </CardContent>
-
       </Card>
-
     </div>
   )
-} 
+}

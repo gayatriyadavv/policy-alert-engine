@@ -39,8 +39,6 @@ export default function BillsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("All")
   const [statusFilter, setStatusFilter] = useState("All")
-
-  /* prioritize animal-related bills by default */
   const [sortBy, setSortBy] = useState<"date" | "impact">("impact")
 
   useEffect(() => {
@@ -54,36 +52,20 @@ export default function BillsPage() {
 
         if (!data?.bills) return
 
-        const billsWithImpact = await Promise.all(
+        const billsWithImpact = data.bills.map((bill:any) => ({
 
-          data.bills.map(async (bill:any) => {
+          id: bill.id,
+          title: bill.title || "Untitled Bill",
+          category: bill.category || "Other",
 
-            let impactScore = 0
+          /* use backend impact score directly */
+          impact: bill.impact_score || 0,
 
-            try {
+          status: "Active",
+          animal: "Owl",
+          date: new Date().toISOString()
 
-              const analysis = await fetch(`http://localhost:8000/analyze/${bill.id}`)
-              const analysisData = await analysis.json()
-
-              impactScore = analysisData.impact_score || 0
-
-            } catch {
-              impactScore = 0
-            }
-
-            return {
-              id: bill.id,
-              title: bill.title || "Untitled Bill",
-              category: bill.category || "Other",
-              impact: impactScore,
-              status: "Active",
-              animal: "Owl",
-              date: new Date().toISOString()
-            }
-
-          })
-
-        )
+        }))
 
         setAllBills(billsWithImpact)
 
@@ -98,6 +80,7 @@ export default function BillsPage() {
     loadBills()
 
   }, [])
+
 
   const filteredBills = useMemo(() => {
 
@@ -127,15 +110,16 @@ export default function BillsPage() {
   }, [allBills, searchQuery, categoryFilter, statusFilter, sortBy])
 
 
+  /* FIXED PRIORITY LOGIC */
   const getPriority = (impact:number) => {
 
-    if (impact >= 80) return { label: "Critical", variant: "destructive" }
-    if (impact >= 50) return { label: "High", variant: "default" }
-    if (impact >= 20) return { label: "Medium", variant: "secondary" }
+    if (impact >= 7) return { label: "High", variant: "destructive" }
+    if (impact >= 4) return { label: "Medium", variant: "secondary" }
 
     return { label: "Low", variant: "outline" }
 
   }
+
 
   return (
 
@@ -149,6 +133,7 @@ export default function BillsPage() {
           Search and filter all tracked legislation
         </p>
       </div>
+
 
       <Card>
 
@@ -272,7 +257,19 @@ export default function BillsPage() {
                     </TableCell>
 
                     <TableCell>
-                      <Badge variant="secondary">{bill.impact}</Badge>
+
+                      <Badge
+                        variant={
+                          bill.impact >= 7
+                            ? "destructive"
+                            : bill.impact >= 4
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {bill.impact}
+                      </Badge>
+
                     </TableCell>
 
                     <TableCell>
