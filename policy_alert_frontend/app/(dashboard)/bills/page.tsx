@@ -61,7 +61,7 @@ export default function BillsPage() {
           /* use backend impact score directly */
           impact: bill.impact_score || 0,
 
-          status: "Active",
+          status: bill.status || "Active",
           animal: "Owl",
           date: new Date().toISOString()
 
@@ -113,10 +113,11 @@ export default function BillsPage() {
   /* FIXED PRIORITY LOGIC */
   const getPriority = (impact:number) => {
 
-    if (impact >= 7) return { label: "High", variant: "destructive" }
-    if (impact >= 4) return { label: "Medium", variant: "secondary" }
+    if (impact >= 85) return { label: "Critical", variant: "destructive" }
+    if (impact >= 65) return { label: "High", variant: "destructive" }
+    if (impact >= 45) return { label: "Medium", variant: "default" }
 
-    return { label: "Low", variant: "outline" }
+    return { label: "Low", variant: "secondary" }
 
   }
 
@@ -260,11 +261,11 @@ export default function BillsPage() {
 
                       <Badge
                         variant={
-                          bill.impact >= 7
+                          bill.impact >= 65
                             ? "destructive"
-                            : bill.impact >= 4
-                            ? "secondary"
-                            : "outline"
+                            : bill.impact >= 45
+                            ? "default"
+                            : "secondary"
                         }
                       >
                         {bill.impact}
@@ -279,7 +280,15 @@ export default function BillsPage() {
                     </TableCell>
 
                     <TableCell>
-                      <Badge>{bill.status}</Badge>
+                      <Badge 
+                        variant={
+                          bill.status === "Active" ? "default" :
+                          bill.status === "Review" ? "secondary" : 
+                          "outline"
+                        }
+                      >
+                        {bill.status}
+                      </Badge>
                     </TableCell>
 
                     <TableCell className="text-right">

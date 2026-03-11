@@ -1,9 +1,30 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+import os
 import sqlite3
+import sys
+
+# Add backend directory to path so ai module can be imported
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
 from ai.generate_draft import generate_draft
+from contextlib import contextmanager
 
 app = FastAPI()
+
+# ---------------------------------
+# DATABASE SETUP
+# ---------------------------------
+# Use absolute path to the backend database to avoid "missing data" bugs
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "backend", "bills.db")
+
+@contextmanager
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 # ---------------------------------
 # CORS CONFIG
@@ -11,7 +32,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False, # Must be False if allow_origins is ["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -107,13 +128,10 @@ def compute_impact_score(title: str):
 @app.get("/bills")
 def get_bills():
 
-    conn = sqlite3.connect("bills.db")
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id, title FROM bills")
-    rows = cursor.fetchall()
-
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title, status FROM bills")
+        rows = cursor.fetchall()
 
     bills = []
 
@@ -124,6 +142,7 @@ def get_bills():
         bills.append({
             "id": r[0],
             "title": r[1],
+            "status": r[2],
             "category": detect_category(r[1]),
             "impact_score": impact,
             "priority": priority
@@ -134,26 +153,21 @@ def get_bills():
         "bills": bills
     }
 
-# ---------------------------------
-# ANALYZE BILL
-# ---------------------------------
+from fastapi import HTTPException
+
 @app.get("/analyze/{bill_id}")
 def analyze_bill(bill_id: int, tone: str = Query("formal")):
 
-    conn = sqlite3.connect("bills.db")
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT title FROM bills WHERE id=?",
-        (bill_id,)
-    )
-
-    result = cursor.fetchone()
-
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT title FROM bills WHERE id=?",
+            (bill_id,)
+        )
+        result = cursor.fetchone()
 
     if not result:
-        return {"error": "Bill not found"}
+        raise HTTPException(status_code=404, detail="Bill not found")
 
     title = result[0]
 
@@ -176,13 +190,10 @@ def analyze_bill(bill_id: int, tone: str = Query("formal")):
 @app.get("/alerts")
 def get_alerts():
 
-    conn = sqlite3.connect("bills.db")
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id, title FROM bills")
-    rows = cursor.fetchall()
-
-    conn.close()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title FROM bills")
+        rows = cursor.fetchall()
 
     alerts = []
 
@@ -223,32 +234,29 @@ def get_alerts():
 @app.post("/scan")
 def scan():
 
-    conn = sqlite3.connect("bills.db")
-    cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-    samples = [
-        "Wildlife Habitat Protection Act",
-        "Marine Fisheries Conservation Bill",
-        "Forest Biodiversity Expansion Act",
-        "Animal Welfare Improvement Bill"
-    ]
+        samples = [
+            "Wildlife Habitat Protection Act",
+            "Marine Fisheries Conservation Bill",
+            "Forest Biodiversity Expansion Act",
+            "Animal Welfare Improvement Bill"
+        ]
 
-    for s in samples:
-
-        cursor.execute(
-            "SELECT id FROM bills WHERE title=?",
-            (s,)
-        )
-
-        exists = cursor.fetchone()
-
-        if not exists:
+        for s in samples:
             cursor.execute(
-                "INSERT INTO bills(title) VALUES(?)",
+                "SELECT id FROM bills WHERE title=?",
                 (s,)
             )
+            exists = cursor.fetchone()
 
-    conn.commit()
-    conn.close()
+            if not exists:
+                cursor.execute(
+                    "INSERT INTO bills(title) VALUES(?)",
+                    (s,)
+                )
+
+        conn.commit()
 
     return {"message": "New bills added"} 
