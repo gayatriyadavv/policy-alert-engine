@@ -1,68 +1,79 @@
-# Policy Alert Engine - Backend API
+# Policy Alert Engine - Backend API 🔌
 
-This directory houses the robust Python backend that physically powers the Policy Alert Engine, including generative data extraction, SQL storage wrappers, and AI logic implementations.
-
----
-
-## 🏗️ Architecture Stack
-* **Web Framework**: [FastAPI](https://fastapi.tiangolo.com/) (High-performance Async Python)
-* **Data Storage**: SQLite (`/backend/bills.db`)
-* **AI Generative Subsystem**: Core ML scripts mapped in `/backend/ai/generate_draft.py`
-* **Local Server Runtime**: Uvicorn
+This is the central intelligence node of the system. It handles data persistence, legislative scoring, and generative AI integrations through a high-performance FastAPI framework.
 
 ---
 
-## 🗄️ Database Schema
-
-The API leverages SQLite extensively to guarantee localized speeds and high portability. It maps strictly to the `backend/bills.db` file.
-
-### Table: `bills`
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY | Unique identifier mapped universally across endpoints. |
-| `title` | TEXT | NOT NULL | The core legislative text block. |
-| `status` | TEXT | default 'Pending' | Triage states (`Active`, `Pending`, `Review`) |
+## 🏗️ Technical Stack
+- **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (Async Python)
+- **Database**: SQLite (Optimized for edge storage)
+- **AI Core**: Custom keyword heuristics + GPT-powered generative logic
+- **Middleware**: Built-in CORS handler for Next.js interoperability
 
 ---
 
-## 🔌 API Endpoints
-All endpoints natively serialize data structures back to HTTP JSON payloads.
+## 🚦 Endpoint Specifications
 
-### Server Checks
-| Method | Route | Description | Expected Output |
-|---|---|---|---|
-| **GET** | `/` | Standard Health check ping. | `{"status": "healthy"}` |
-
-### Bill Engine
+### 1. Global & Diagnostics
 | Method | Route | Description |
-|---|---|---|
-| **GET** | `/bills` | The master retrieval function. Pulls the entire SQLite matrix and dynamically executes environmental impact parsing to compute scores and categories. Returns raw counts alongside computed structures. |
-| **GET** | `/alerts` | A tightly scoped proxy logic of `GET /bills` utilizing an impact floor constraint (Impact $\ge$ `25`). Specifically engineered for the Alerts Dashboard, sorting urgent priority items natively via FastAPI logic. |
+| :--- | :--- | :--- |
+| `GET` | `/` | Health check and server status. |
 
-### Generative AI Integration
-| Method | Route | Description |
-|---|---|---|
-| **GET** | `/analyze/{bill_id}?tone=formal` | Extracts deeply isolated insights. Triggers the generative AI pipeline bound inside the `/backend/ai/` directory to automatically draft legislative statements spanning targeted tones (`formal` / `informal`). |
-
-### CLI / Simulated Bots
-| Method | Route | Description |
-|---|---|---|
-| **POST** | `/scan` | Primarily an operational endpoint. Safely scans and introduces simulated test legislation (such as "Marine Fisheries Conservation Bill") strictly if it doesn't already exist in the database constraints. | 
-
----
-
-## 🚀 Running the API Locally 
-
-To run the API on a local development node independently of the overarching React interface:
-
-```bash
-# Move into the targeted directory
-cd api
-
-# Mount the virtual environment boundary
-source ../venv/bin/activate
-
-# Execute the threaded Uvicorn server runtime
-uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+### 2. Legislation Management
+#### `GET /bills`
+Returns a paginated list of all legislative items stored in the system.
+- **Processing**: Each bill's title is scanned in real-time to compute `impact_score` and `priority`.
+- **Response Shape**:
+```json
+{
+  "count": 5,
+  "bills": [
+    {
+      "id": 1,
+      "title": "Wildlife Protection Act",
+      "category": "Wildlife",
+      "impact_score": 88,
+      "priority": "Critical"
+    }
+  ]
+}
 ```
-You can safely query `http://127.0.0.1:8000/bills` using `curl` or Postman to verify operations.
+
+#### `GET /alerts`
+A filtered version of the bill feed, returning only items with a high enough impact threshold.
+- **Threshold**: Currently set at $\ge$ 25 to ensure visibility of important legislation.
+
+### 3. Intelligence & AI
+#### `GET /analyze/{bill_id}`
+Triggers the generative AI pipeline to create a draft legislative statement.
+- **Parameters**: `tone` (Options: `formal`, `informal`, `urgent`)
+- **Action**: Queries the `backend/ai` module to synthesize a response based on bill content.
+
+### 4. System Operations
+#### `POST /scan`
+Simulates a web scraper "ingesting" new data into the database. Use this to populate a fresh environment.
+
+---
+
+## 🛠️ Developer Setup
+
+1. **Virtual Environment**:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. **Run Server**:
+```bash
+# Execute from 'api' directory
+uvicorn app:app --port 8000 --reload
+```
+
+---
+
+## 🔍 Scoring Logic Deep Dive
+
+The `compute_impact_score` function in `app.py` is the heart of the system. It uses a hybrid approach:
+1. **Base Score**: Assigned by category (e.g., Wildlife = 50, Climate = 32).
+2. **Keyword Bonuses**: Incremental points added for critical terms (e.g., "endangered" +12, "conservation" +8).
+3. **Normalization**: Final scores are clamped between 0 and 100 before being mapped to a priority level.
